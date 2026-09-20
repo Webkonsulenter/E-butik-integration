@@ -1,0 +1,11 @@
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.sublime-*
+
+# Never commit built release zips - GitHub generates source archives itself
+*.zip
