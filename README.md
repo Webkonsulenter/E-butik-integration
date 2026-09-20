@@ -49,7 +49,7 @@ CSS and new-tab script are printed only on the orders list, only when the button
 ## Releasing
 
 Bump `Version:` in the plugin header and `Stable tag:` in `readme.txt`, add a changelog
-entry, then tag `v3.3.1` or cut a GitHub release. Client sites pick it up within 12 hours,
+entry, then tag `v3.4.1` or cut a GitHub release. Client sites pick it up within 12 hours,
 or immediately via "Check again" on the updates screen.
 
 The update library rewrites the extracted folder name via `upgrader_source_selection`, so
