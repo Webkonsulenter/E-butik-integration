@@ -11,6 +11,11 @@ on:
   push:
     tags:
       - 'v*'
+  # Lets an existing tag be (re)built from the Actions tab without having to
+  # delete and re-push it. Pick the tag, not a branch, in the "Run workflow"
+  # dropdown - the version check below reads the ref name and a branch will
+  # fail it.
+  workflow_dispatch:
 
 permissions:
   contents: write
