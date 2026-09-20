@@ -1,10 +1,10 @@
 === E-butik regnskabs-integration ===
 Contributors: jenskirk
 Tags: woocommerce, e-conomic, integration
-Requires at least: 6.0
-Tested up to: 6.8
+Requires at least: 6.5
+Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 3.4.0
+Stable tag: 3.5.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -19,6 +19,13 @@ needs. Only the Site ID is configurable; endpoint, icon and webhook URL are fixe
 The plugin registers no front-end hooks, so it has no effect on checkout.
 
 == Changelog ==
+
+= 3.5.0 =
+* Updates are now also checked under WP-CLI. Sites maintained with "wp plugin update" were never offered a new version before.
+* An admin notice is shown if the bundled update library is missing, instead of the plugin silently never updating again.
+* The webhook lookup is a single query instead of one per registered webhook.
+* Tagged releases now carry a zip that unpacks to the correct folder name, for manual installation.
+* Minimum WordPress raised to 6.5, which the "Requires Plugins" header needs. Tested up to 7.1.
 
 = 3.4.0 =
 * Renamed the internal handle from "ebutik" to "e-butik" (e_butik for PHP identifiers).

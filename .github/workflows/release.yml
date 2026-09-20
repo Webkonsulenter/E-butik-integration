@@ -1,0 +1,62 @@
+name: Release
+
+# Fires on a pushed v-tag. Builds the plugin zip with the folder name WordPress
+# expects, and publishes it as a GitHub release asset for manual installation.
+#
+# Automatic updates do NOT use this asset - the update library downloads GitHub's
+# own source archive and rewrites the folder name itself. The asset exists so that
+# a zip handed to someone for manual upload cannot land in the wrong directory.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # A tag whose number disagrees with the plugin header would ship an update
+      # that WordPress then refuses to recognise. Fail here instead.
+      - name: Verify version matches tag
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          header="$(grep -m1 '^ \* Version:' e-butik-integration.php | awk '{print $NF}')"
+          stable="$(grep -m1 '^Stable tag:' readme.txt | awk '{print $NF}')"
+
+          echo "tag=$tag header=$header readme=$stable"
+
+          if [ "$header" != "$tag" ] || [ "$stable" != "$tag" ]; then
+            echo "::error::Version mismatch - plugin header '$header' / readme.txt '$stable' / tag '$tag' must all agree."
+            exit 1
+          fi
+
+      - name: Build plugin zip
+        run: |
+          set -euo pipefail
+          mkdir -p build/e-butik-integration
+          rsync -a \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude 'build' \
+            --exclude '.gitignore' \
+            --exclude 'README.md' \
+            ./ build/e-butik-integration/
+          cd build
+          zip -qr ../e-butik-integration.zip e-butik-integration
+          cd ..
+          echo "Top-level entries in the zip:"
+          unzip -Z1 e-butik-integration.zip | cut -d/ -f1 | sort -u
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: e-butik-integration.zip
+          generate_release_notes: true

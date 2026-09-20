@@ -3,13 +3,13 @@
  * Plugin Name:       E-butik regnskabs-integration
  * Plugin URI:        https://webkonsulenterne.dk
  * Description:       Tilføjer knappen "Kør integration" til WooCommerce-ordrelisten og kan oprette den nødvendige webhook. Site ID konfigureres under Indstillinger &rarr; E-butik Integration.
- * Version:           3.4.0
+ * Version:           3.5.0
  * Author:            Jens Kirk
  * Author URI:        https://webkonsulenterne.dk
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       e-butik-integration
- * Requires at least: 6.0
+ * Requires at least: 6.5
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
  *
@@ -36,9 +36,11 @@ add_action(
 /*
  * GitHub updates.
  *
- * Loaded on admin requests and during cron. Cron matters because WordPress runs
- * unattended background updates there, where is_admin() is false — without this
- * the plugin would only ever update when someone opened wp-admin.
+ * Loaded on admin requests, during cron, and under WP-CLI. Cron matters because
+ * WordPress runs unattended background updates there, where is_admin() is false.
+ * WP-CLI matters for the same reason: "wp plugin list" and "wp plugin update" run
+ * with both is_admin() and wp_doing_cron() false, so without that clause a site
+ * maintained from the command line would silently never be offered a new version.
  *
  * Both constants can be overridden in wp-config.php, so a private repository's
  * token never has to be committed:
@@ -46,7 +48,11 @@ add_action(
  *     define( 'E_BUTIK_INTEGRATION_REPO', 'https://github.com/Webkonsulenter/E-butik-integration/' );
  *     define( 'E_BUTIK_INTEGRATION_GITHUB_TOKEN', 'github_pat_...' );
  */
-if ( is_admin() || ( function_exists( 'wp_doing_cron' ) && wp_doing_cron() ) ) {
+if (
+	is_admin()
+	|| ( function_exists( 'wp_doing_cron' ) && wp_doing_cron() )
+	|| ( defined( 'WP_CLI' ) && WP_CLI )
+) {
 	$e_butik_puc = __DIR__ . '/plugin-update-checker/plugin-update-checker.php';
 
 	if ( is_readable( $e_butik_puc ) ) {
@@ -70,11 +76,32 @@ if ( is_admin() || ( function_exists( 'wp_doing_cron' ) && wp_doing_cron() ) ) {
 		}
 
 		/*
-		 * Only enable this if every release carries a properly named .zip asset.
-		 * Without a matching asset the update has nothing to download.
+		 * Release assets stay off deliberately. The release workflow attaches a
+		 * correctly named zip to every tag, but that zip is for manual installs.
+		 * Updates driven from here use GitHub's source archive plus the library's
+		 * folder rewrite, which also works for tags pushed before the workflow
+		 * existed - enabling assets would break the update on any such tag.
 		 *
 		 * $e_butik_update_checker->getVcsApi()->enableReleaseAssets( '/\.zip($|[?&#])/i' );
 		 */
+	} elseif ( is_admin() ) {
+		/*
+		 * Without the library the plugin keeps working but stops updating, and
+		 * nothing anywhere would say so. Shown only to users who can act on it.
+		 */
+		add_action(
+			'admin_notices',
+			static function () {
+				if ( ! current_user_can( 'update_plugins' ) ) {
+					return;
+				}
+
+				printf(
+					'<div class="notice notice-error"><p>%s</p></div>',
+					esc_html__( 'E-butik Integration: mappen "plugin-update-checker" mangler, så pluginet kan ikke opdatere sig selv. Geninstaller fra den komplette zip-fil.', 'e-butik-integration' )
+				);
+			}
+		);
 	}
 }
 
@@ -304,12 +331,61 @@ final class E_Butik_Integration {
 	 * ------------------------------------------------------------------ */
 
 	/**
+	/**
 	 * Finds the webhook this plugin manages, matched on topic and delivery URL.
+	 *
+	 * One query, rather than one per registered webhook: the data store only
+	 * offers "every id", and reading the topic and URL back out of those means
+	 * instantiating every webhook on the site just to discard it again.
 	 *
 	 * @return WC_Webhook|null
 	 */
 	private static function find_webhook() {
-		if ( ! function_exists( 'wc_get_webhook' ) || ! class_exists( 'WC_Data_Store' ) ) {
+		if ( ! function_exists( 'wc_get_webhook' ) ) {
+			return null;
+		}
+
+		global $wpdb;
+
+		$table = $wpdb->prefix . 'wc_webhooks';
+
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$webhook_id = $wpdb->get_var(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- a table name cannot be a placeholder.
+				"SELECT webhook_id FROM {$table} WHERE topic = %s AND delivery_url = %s ORDER BY webhook_id ASC LIMIT 1",
+				self::WEBHOOK_TOPIC,
+				self::WEBHOOK_URL
+			)
+		);
+		// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+
+		/*
+		 * A failed query must never be read as "no webhook exists" - that would
+		 * let the button create a second one. Fall back to the data store, which
+		 * goes through WooCommerce's own abstraction.
+		 */
+		if ( $wpdb->last_error ) {
+			return self::find_webhook_by_scan();
+		}
+
+		if ( ! $webhook_id ) {
+			return null;
+		}
+
+		$webhook = wc_get_webhook( (int) $webhook_id );
+
+		return $webhook ? $webhook : null;
+	}
+
+	/**
+	 * Full scan through the data store. Only reached when the direct query fails,
+	 * e.g. where the webhooks table is missing, renamed or filtered away.
+	 *
+	 * @return WC_Webhook|null
+	 */
+	private static function find_webhook_by_scan() {
+		if ( ! class_exists( 'WC_Data_Store' ) ) {
 			return null;
 		}
 
